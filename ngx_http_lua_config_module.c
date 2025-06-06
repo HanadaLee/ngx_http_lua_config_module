@@ -163,7 +163,7 @@ ngx_http_lua_config_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
             dst = conf->keys->elts;
             for (j = 0; j < conf->keys->nelts; j++) {
                 if (src[i].key.len == dst[j].key.len
-                    && ngx_strcasecmp(dst[j].key.data, src[i].key.data) == 0)
+                    && ngx_strcmp(dst[j].key.data, src[i].key.data) == 0)
                 {
                     found = 1;
                     break;
@@ -183,10 +183,10 @@ ngx_http_lua_config_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
         }
     }
 
-    hash.key = ngx_hash_key_lc;
+    hash.key = ngx_hash_key;
     hash.max_size = conf->hash_max_size;
     hash.bucket_size = conf->hash_bucket_size;
-    hash.name = ngx_string("lua_configs_hash");
+    hash.name = "lua_configs_hash";
     hash.pool = cf->pool;
 
     if (conf->keys && conf->keys->nelts) {
@@ -227,7 +227,6 @@ ngx_http_lua_config_directive(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     for (p = value[1].data; p < value[1].data + value[1].len; p++) {
         if (!((*p >= '0' && *p <= '9')
               || (*p >= 'a' && *p <= 'z')
-              || (*p >= 'A' && *p <= 'Z')
               || *p == '_'))
         {
             ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
@@ -235,7 +234,6 @@ ngx_http_lua_config_directive(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
                                "name \"%V\"", *p, &value[1]);
             return NGX_CONF_ERROR;
         }
-        *p = ngx_tolower(*p);
     }
 
     if (lccf->keys == NULL) { 
@@ -297,11 +295,9 @@ ngx_http_lua_config_get_value_internal(ngx_http_request_t *r, u_char *name, size
     ngx_str_t                        s_name;
     ngx_keyval_t                    *kv;
     ngx_uint_t                       key;
-    u_char                           lowcase_name[NGX_MAX_CONF_ERR_LEN];
 
     s_name.len = len;
-    s_name.data = lowcase_name;
-    ngx_strlow(s_name.data, name, len);
+    s_name.data = name;
 
     if (r) {
         lccf = ngx_http_get_module_loc_conf(r, ngx_http_lua_config_module);
@@ -315,9 +311,9 @@ ngx_http_lua_config_get_value_internal(ngx_http_request_t *r, u_char *name, size
         return NULL;
     }
 
-    key = ngx_hash_key(s_name, len);
+    key = ngx_hash_key(s_name.data, s_name.len);
 
-    kv = ngx_hash_find(&lccf->hash, key, s_name, len);
+    kv = ngx_hash_find(&lccf->hash, key, s_name.data, s_name.len);
     if (kv == NULL) {
         return NULL;
     }
