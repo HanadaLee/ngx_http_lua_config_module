@@ -98,35 +98,12 @@ ngx_module_t  ngx_http_lua_config_module = {
 static ngx_int_t
 ngx_http_lua_config_init(ngx_conf_t *cf)
 {
-    ngx_http_lua_config_loc_conf_t  *lccf;
-    ngx_hash_init_t                  hash;
-
     if (ngx_http_lua_add_package_preload(cf, "ngx.lua_config",
                                          ngx_http_lua_config_create_module)
         != NGX_OK)
     {
         return NGX_ERROR;
     }
-
-    lccf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_lua_config_module);
-
-    if (lccf->keys && lccf->keys->nelts != 0 && lccf->hash.buckets == NULL) {
-        hash.key = ngx_hash_key;
-        hash.max_size = lccf->hash_max_size;
-        hash.bucket_size = lccf->hash_bucket_size;
-        hash.name = "lua_config_hash";
-        hash.pool = cf->pool;
-        hash.hash = &lccf->hash;
-        hash.temp_pool = NULL;
-
-        if (ngx_hash_init(&hash, lccf->keys->elts, lccf->keys->nelts)
-            != NGX_OK)
-        {
-            return NGX_ERROR;
-        }
-    }
-
-    lccf->hash_keys = NULL;
 
     return NGX_OK;
 }
