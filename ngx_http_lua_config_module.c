@@ -150,12 +150,13 @@ ngx_http_lua_config_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 
     ngx_conf_merge_ptr_value(conf->keys, prev->keys, NULL);
 
-    if (conf->keys == prev->keys) {
+    if (conf->keys == NULL) {
         conf->hash = prev->hash;
+        conf->keys = prev->keys;
         return NGX_CONF_OK;
     }
     
-    if (conf->keys && prev->keys && prev->keys != NGX_CONF_UNSET_PTR) {
+    if (prev->keys) {
         src = prev->keys->elts;
         for (i = 0; i < prev->keys->nelts; i++) { 
             found = 0;
