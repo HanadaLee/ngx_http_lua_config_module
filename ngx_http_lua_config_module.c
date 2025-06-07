@@ -180,6 +180,10 @@ ngx_http_lua_config_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
             }
 
             *kv = src[i];
+
+            if (ngx_hash_add_key(conf->hash_keys, &kv->key, kv, 0) != NGX_OK) {
+                return NGX_CONF_ERROR;
+            }
         }
     }
 
