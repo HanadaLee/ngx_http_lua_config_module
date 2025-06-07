@@ -310,7 +310,7 @@ ngx_http_lua_config_get_value_internal(ngx_http_request_t *r, u_char *name, size
                                                    ngx_http_lua_config_module);
     }
 
-    if (lccf == NULL || lccf->keys == NULL || lccf->keys->nelts == 0) {
+    if (lccf == NULL || lccf->keys == NULL || lccf->hash.buckets == NULL) {
         return NULL;
     }
 
