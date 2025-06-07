@@ -98,7 +98,7 @@ ngx_module_t  ngx_http_lua_config_module = {
 static ngx_int_t
 ngx_http_lua_config_init(ngx_conf_t *cf)
 {
-    ngx_http_lua_config_loc_conf_t  *mlcf;
+    ngx_http_lua_config_loc_conf_t  *lccf;
     ngx_hash_init_t                  hash;
 
     if (ngx_http_lua_add_package_preload(cf, "ngx.lua_config",
