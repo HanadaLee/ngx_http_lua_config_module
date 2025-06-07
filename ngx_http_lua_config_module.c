@@ -132,6 +132,8 @@ ngx_http_lua_config_prefix_variable(ngx_http_request_t *r,
 {
     ngx_str_t *name = (ngx_str_t *) data;
 
+    ngx_http_lua_config_loc_conf_t  *lccf;
+
     u_char         *lua_config;
     size_t          len;
     ngx_keyval_t   *kv;
@@ -375,7 +377,7 @@ ngx_http_lua_config_directive(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 static char *
 ngx_http_lua_config_get_value_internal(ngx_http_request_t *r, u_char *name, size_t len)
 {
-    ngx_http_lua_config_loc_conf_t  *lccf = NULL;
+    ngx_http_lua_config_loc_conf_t  *lccf;
     ngx_str_t                        s_name;
     ngx_keyval_t                    *kv;
     ngx_uint_t                       key;
