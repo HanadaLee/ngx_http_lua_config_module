@@ -28,6 +28,7 @@ typedef struct {
 } ngx_http_lua_config_loc_conf_t;
 
 
+static ngx_int_t ngx_http_lua_config_add_variables(ngx_conf_t *cf);
 static char *ngx_http_lua_config_directive(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf);
 static void *ngx_http_lua_config_create_loc_conf(ngx_conf_t *cf);
@@ -38,6 +39,8 @@ static ngx_int_t ngx_http_lua_config_init(ngx_conf_t *cf);
 
 static int ngx_http_lua_config_create_module(lua_State *L);
 static int ngx_http_lua_config_get_config(lua_State *L);
+static ngx_int_t ngx_http_lua_config_prefix_variable(ngx_http_request_t *r,
+    ngx_http_variable_value_t *v, uintptr_t data);
 
 
 static ngx_command_t  ngx_http_lua_config_commands[] = {
@@ -68,7 +71,7 @@ static ngx_command_t  ngx_http_lua_config_commands[] = {
 
 
 static ngx_http_module_t  ngx_http_lua_config_module_ctx = {
-    NULL,                                  /* preconfiguration */
+    ngx_http_lua_config_add_variables,     /* preconfiguration */
     ngx_http_lua_config_init,              /* postconfiguration */
     NULL,                                  /* create main configuration */
     NULL,                                  /* init main configuration */
@@ -93,6 +96,84 @@ ngx_module_t  ngx_http_lua_config_module = {
     NULL,                                  /* exit master */
     NGX_MODULE_V1_PADDING
 };
+
+
+static ngx_http_variable_t  ngx_http_lua_config_vars[] = {
+
+    { ngx_string("lua_config_"), NULL, ngx_http_lua_config_prefix_variable,
+        0, NGX_HTTP_VAR_PREFIX, 0 },
+
+      ngx_http_null_variable
+};
+
+
+static ngx_int_t
+ngx_http_lua_config_add_variables(ngx_conf_t *cf)
+{
+    ngx_http_variable_t  *var, *v;
+
+    for (v = ngx_http_lua_config_vars; v->name.len; v++) {
+        var = ngx_http_add_variable(cf, &v->name, v->flags);
+        if (var == NULL) {
+            return NGX_ERROR;
+        }
+
+        var->get_handler = v->get_handler;
+        var->data = v->data;
+    }
+
+    return NGX_OK;
+}
+
+
+static ngx_int_t
+ngx_http_lua_config_prefix_variable(ngx_http_request_t *r,
+    ngx_http_variable_value_t *v, uintptr_t data)
+{
+    ngx_str_t *name = (ngx_str_t *) data;
+
+    u_char         *lua_config;
+    size_t          len;
+    ngx_keyval_t   *kv;
+    ngx_uint_t      key;
+
+    len = name->len - (sizeof("lua_config_") - 1);
+    lua_config = name->data + sizeof("lua_config_") - 1;
+
+    if (len == 0) {
+        v->not_found = 1;
+        return NGX_OK;
+    }
+
+    lccf = ngx_http_get_module_loc_conf(r, ngx_http_lua_config_module);
+
+    if (lccf == NULL || lccf->keys == NULL || lccf->hash.buckets == NULL) {
+        v->not_found = 1;
+        return NGX_OK;
+    }
+
+    key = ngx_hash_key(lua_config, len);
+
+    kv = ngx_hash_find(&lccf->hash, key, lua_config, len);
+    if (kv == NULL) {
+        v->not_found = 1;
+        return NGX_OK;
+    }
+
+    v->data = ngx_pnalloc(r->pool, kv->value.len);
+    if (v->data == NULL) {
+        return NGX_ERROR;
+    }
+
+    ngx_memcpy(v->data, kv->value.data, kv->value.len);
+
+    v->len = kv->value.len;
+    v->valid = 1;
+    v->no_cacheable = 0;
+    v->not_found = 0;
+
+    return NGX_OK;
+}
 
 
 static ngx_int_t
@@ -328,10 +409,10 @@ ngx_http_lua_config_get_value_internal(ngx_http_request_t *r, u_char *name, size
 static int
 ngx_http_lua_config_get_config(lua_State *L)
 {
-    ngx_http_request_t          *r;
-    u_char                      *name_data;
-    size_t                       name_len;
-    char                        *value;
+    ngx_http_request_t    *r;
+    u_char                *name_data;
+    size_t                 name_len;
+    char                  *value;
 
     if (lua_gettop(L) != 1) {
         return luaL_error(L, "exactly one argument expected");

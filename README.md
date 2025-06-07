@@ -1,93 +1,159 @@
 # ngx_http_lua_config_module
 
+# Name
+`ngx_http_lua_config_module` allows defining key-value configuration items in Nginx configuration, which can then be retrieved in Lua modules via the `ngx.lua_config` API or as nginx variables. This enables unified management and passing of configuration information from the Nginx configuration layer to Lua logic.
 
+# Table of Content
 
-## Getting started
+- [ngx\_http\_lua\_config\_module](#ngx_http_lua_config_module)
+- [Name](#name)
+- [Table of Content](#table-of-content)
+- [Status](#status)
+- [Synopsis](#synopsis)
+- [Installation](#installation)
+- [Directives](#directives)
+		- [`lua_config`](#lua_config)
+		- [`lua_config_hash_max_size`](#lua_config_hash_max_size)
+		- [`lua_config_hash_bucket_size`](#lua_config_hash_bucket_size)
+- [Variables](#variables)
+		- [`$lua_config_name`](#lua_config_name)
+- [Lua API](#lua-api)
+		- [`ngx.lua_config.get(key)`](#ngxlua_configgetkey)
+- [Author](#author)
+- [License](#license)
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+# Status
+This Nginx module is currently considered experimental. Issues and PRs are welcome if you encounter any problems.
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+# Synopsis
 
-## Add your files
+```nginx
+http {
+    server {
+        listen 80;
+        server_name example.com;
 
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/ee/gitlab-basics/add-file.html#add-a-file-using-the-command-line) or push an existing Git repository with the following command:
+        # Local configuration overrides parent configuration
+        lua_config server_id "my_server_id_A";
 
+        location /api {
+            # Local configuration
+            lua_config api_version "v1.0";
+
+            # Access via Nginx variables
+            add_header X-Env "$lua_config_environment";
+            add_header X-Server-Region "$lua_config_server_region";
+            add_header X-Server-Id "$lua_config_server_id"; # "my_server_id_A"
+            add_header X-Api-Version "$lua_config_api_version";
+
+            content_by_lua_block {
+                -- Access via Lua API
+				local lua_config = require "ngx.lua_config"
+                local env = lua_config.get("environment")
+                local region = lua_config.get("server_region")
+                local server_id = lua_config.get("server_id") -- "my_server_id_A"
+                local api_version = lua_config.get("api_version")
+
+                ngx.log(ngx.INFO, "Env: ", env, ", Region: ", region, ", Server ID: ", server_id, ", API Version: ", api_version)
+
+                ngx.say("OK")
+            }
+        }
+
+        location /another {
+            # In another location, server_id will be "my_server_id_A"
+            # api_version is not defined here, so it will be nil
+            content_by_lua_block {
+                local server_id = ngx.lua_config.get("server_id")
+                local api_version = ngx.lua_config.get("api_version")
+                ngx.log(ngx.INFO, "Server ID: ", server_id, ", API Version: ", api_version or "nil")
+                ngx.say("OK")
+            }
+        }
+    }
+}
 ```
-cd existing_repo
-git remote add origin https://git.hanada.info/hanada/ngx_http_lua_config_module.git
-git branch -M main
-git push -uf origin main
+
+# Installation
+To use this module, configure your Nginx branch with `--add-module=/path/to/ngx_http_lua_config_module`.
+
+# Directives
+
+### `lua_config`
+
+**Syntax:** `lua_config key value;`
+**Default:** `-`
+**Context:** `server`, `location`
+
+Defines a key-value configuration item.
+*   `key`: The key name, only allowed to contain lowercase letters, numbers, and underscores. The same key cannot be defined repeatedly within the same `context`.
+*   `value`: The key's value, an arbitrary string. Nginx variables are not parsed, but you can parse them in lua code.
+
+Duplicate keys defined in child blocks will override the definitions from parent blocks.
+
+**Example:**
+
+```nginx
+lua_config data_source "primary";
+lua_config cache_timeout "300s";
 ```
 
-## Integrate with your tools
+### `lua_config_hash_max_size`
 
-- [ ] [Set up project integrations](https://git.hanada.info/hanada/ngx_http_lua_config_module/-/settings/integrations)
+**Syntax:** `lua_config_hash_max_size number;`
+**Default:** `lua_config_hash_max_size 512;`
+**Context:** `server`, `location`
 
-## Collaborate with your team
+Sets the maximum size of the hash table for storing `lua_config` key-value pairs.
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/ee/user/project/merge_requests/merge_when_pipeline_succeeds.html)
+### `lua_config_hash_bucket_size`
 
-## Test and Deploy
+**Syntax:** `lua_config_hash_bucket_size number;`
+**Default:** `lua_config_hash_bucket_size 32|64|128;`
+**Context:** `server`, `location`
 
-Use the built-in continuous integration in GitLab.
+Sets the bucket size of the hash table for `lua_config` items. The default value depends on the processor's cache line size. Details on setting up hash tables are provided in a separate document.
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/index.html)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+# Variables
 
-***
+### `$lua_config_name`
 
-# Editing this README
+Accesses the value of a specific `lua_config` item by its `name`.
+**Example:**
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+```nginx
+lua_config data_source "my_data_source";
+add_header My-Config-Value "$lua_config_data_source";
+```
 
-## Suggestions for a good README
+# Lua API
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+In Lua, `lua_config` items defined in the Nginx configuration can be accessed via the `ngx.lua_config` table.
 
-## Name
-Choose a self-explaining name for your project.
+### `ngx.lua_config.get(key)`
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+**Syntax:** `value = ngx.lua_config.get(key)`
+**Context:** `set_by_lua*`, `rewrite_by_lua*`, `access_by_lua*`, `content_by_lua*`, `header_filter_by_lua*`, `body_filter_by_lua*`, `log_by_lua*`
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+Retrieves the value of a specific `lua_config` item by its `key`.
+*   `key`: A string representing the key name of the configuration item to query.
+*   **Returns:**
+    *   The value of the corresponding configuration item (string type) if found.
+    *   `nil` if the configuration item is not found.
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+**Example:**
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+```lua
+local my_data_source = ngx.lua_config.get("data_source")
+if my_data_source then
+    ngx.log(ngx.INFO, "Data source: ", my_data_source)
+else
+    ngx.log(ngx.WARN, "Data source not found!")
+end
+```
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+# Author
+Hanada im@hanada.info
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+# License
+This Nginx module is licensed under BSD 2-Clause License.
