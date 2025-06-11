@@ -12,13 +12,13 @@
 - [Synopsis](#synopsis)
 - [Installation](#installation)
 - [Directives](#directives)
-		- [`lua_config`](#lua_config)
-		- [`lua_config_hash_max_size`](#lua_config_hash_max_size)
-		- [`lua_config_hash_bucket_size`](#lua_config_hash_bucket_size)
+    - [`lua_config`](#lua_config)
+    - [`lua_config_hash_max_size`](#lua_config_hash_max_size)
+    - [`lua_config_hash_bucket_size`](#lua_config_hash_bucket_size)
 - [Variables](#variables)
-		- [`$lua_config_name`](#lua_config_name)
+    - [`$lua_config_name`](#lua_config_name)
 - [Lua API](#lua-api)
-		- [`ngx.lua_config.get(key)`](#ngxlua_configgetkey)
+    - [`ngx.lua_config.get(key)`](#ngxlua_configgetkey)
 - [Author](#author)
 - [License](#license)
 
@@ -101,15 +101,19 @@ lua_config cache_timeout "300s";
 ### `lua_config_hash_max_size`
 
 **Syntax:** `lua_config_hash_max_size number;`
+
 **Default:** `lua_config_hash_max_size 512;`
-**Context:** `server`, `location`
+
+**Context:** `http`, `server`, `location`
 
 Sets the maximum size of the hash table for storing `lua_config` key-value pairs.
 
 ### `lua_config_hash_bucket_size`
 
 **Syntax:** `lua_config_hash_bucket_size number;`
+
 **Default:** `lua_config_hash_bucket_size 32|64|128;`
+
 **Context:** `server`, `location`
 
 Sets the bucket size of the hash table for `lua_config` items. The default value depends on the processor's cache line size. Details on setting up hash tables are provided in a separate document.
@@ -133,8 +137,7 @@ In Lua, `lua_config` items defined in the Nginx configuration can be accessed vi
 ### `ngx.lua_config.get(key)`
 
 **Syntax:** `value = ngx.lua_config.get(key)`
-**Context:** `set_by_lua*`, `rewrite_by_lua*`, `access_by_lua*`, `content_by_lua*`, `header_filter_by_lua*`, `body_filter_by_lua*`, `log_by_lua*`
-
+**Context:** `set_by_lua*`, `rewrite_by_lua*`, `access_by_lua*`, `content_by_lua*`, `header_filter_by_lua*`, `body_filter_by_lua*`, `log_by_lua*`, `balancer_by_lua*`
 Retrieves the value of a specific `lua_config` item by its `key`.
 *   `key`: A string representing the key name of the configuration item to query.
 *   **Returns:**
