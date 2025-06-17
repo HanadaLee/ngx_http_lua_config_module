@@ -46,7 +46,7 @@ static ngx_int_t ngx_http_lua_config_prefix_variable(ngx_http_request_t *r,
 static ngx_command_t  ngx_http_lua_config_commands[] = {
 
     { ngx_string("lua_config"),
-      NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE2,
+      NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE2,
       ngx_http_lua_config_directive,
       NGX_HTTP_LOC_CONF_OFFSET,
       0,
@@ -227,6 +227,32 @@ ngx_http_lua_config_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
     ngx_uint_t                       i, j, found;
     ngx_keyval_t                    *src, *dst, *kv;
 
+    /* init hash in http {} context to inherit it in all servers */
+    if (prev->keys && prev->keys->nelts > 0 && !prev->hash) {
+        ngx_conf_init_uint_value(prev->hash_max_size, 512);
+        ngx_conf_init_uint_value(prev->hash_bucket_size,
+                                 ngx_align(64, ngx_cacheline_size));
+
+        hash.key = ngx_hash_key;
+        hash.max_size = prev->hash_max_size;
+        hash.bucket_size = prev->hash_bucket_size;
+        hash.name = "lua_config_hash";
+        hash.pool = cf->pool;
+
+        if (prev->hash_keys->keys.nelts) {
+            hash.hash = &prev->hash;
+            hash.temp_pool = NULL;
+
+            if (ngx_hash_init(&hash, prev->hash_keys->keys.elts,
+                              prev->hash_keys->keys.nelts) != NGX_OK)
+            {
+                return NGX_CONF_ERROR;
+            }
+        }
+
+        prev->hash_keys = NULL;
+    }
+
     ngx_conf_merge_uint_value(conf->hash_max_size, prev->hash_max_size, 512);
     ngx_conf_merge_uint_value(conf->hash_bucket_size, prev->hash_bucket_size,
                               ngx_align(64, ngx_cacheline_size));
@@ -280,7 +306,7 @@ ngx_http_lua_config_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
         hash.temp_pool = NULL;
 
         if (ngx_hash_init(&hash, conf->hash_keys->keys.elts,
-                            conf->hash_keys->keys.nelts) != NGX_OK)
+                          conf->hash_keys->keys.nelts) != NGX_OK)
         {
             return NGX_CONF_ERROR;
         }
