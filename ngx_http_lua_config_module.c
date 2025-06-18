@@ -228,7 +228,7 @@ ngx_http_lua_config_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
     ngx_keyval_t                    *src, *dst, *kv;
 
     /* init hash in http {} context to inherit it in all servers */
-    if (prev->keys && prev->keys->nelts > 0 && !prev->hash) {
+    if (prev->keys && prev->keys->nelts > 0 && prev->hash.buckets == NULL) {
         ngx_conf_init_uint_value(prev->hash_max_size, 512);
         ngx_conf_init_uint_value(prev->hash_bucket_size,
                                  ngx_align(64, ngx_cacheline_size));
