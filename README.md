@@ -82,7 +82,7 @@ To use this module, configure your Nginx branch with `--add-module=/path/to/ngx_
 
 ### `lua_config`
 
-**Syntax:** `lua_config key value;`
+**Syntax:** `lua_config key value [if=condition];`
 
 **Default:** `-`
 
@@ -90,14 +90,14 @@ To use this module, configure your Nginx branch with `--add-module=/path/to/ngx_
 
 Defines a key-value configuration item.
 *   `key`: The key name, only allowed to contain lowercase letters, numbers, and underscores. The same key cannot be defined repeatedly within the same `context`.
-*   `value`: The key's value, an arbitrary string. Nginx variables are not parsed, but you can parse them in lua code.
-
-Duplicate keys defined in child blocks will override the definitions from parent blocks.
+*   `value`: The key's value, an arbitrary string. it can contain variables.
+*   `if`: enables conditional value. If the `condition` evaluates to “0” or an empty string, the subsequent definition of `key` will be evaluated. If none of the definitions are met, the Lua code will return `nil`.
 
 **Example:**
 
 ```nginx
 lua_config data_source primary;
+lua_config set_header $arg_test if=$arg_test;
 lua_config cache_timeout 300s;
 ```
 
@@ -126,6 +126,7 @@ Sets the bucket size of the hash table for `lua_config` items. The default value
 ### `$lua_config_name`
 
 Accesses the value of a specific `lua_config` item by its `name`.
+
 **Example:**
 
 ```nginx
