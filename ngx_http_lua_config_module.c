@@ -47,8 +47,10 @@ static void *ngx_http_lua_config_create_loc_conf(ngx_conf_t *cf);
 static char *ngx_http_lua_config_merge_loc_conf(ngx_conf_t *cf, void *parent,
     void *child);
 
-static ngx_int_t ngx_http_lua_config_init(ngx_conf_t *cf);
+static ngx_int_t ngx_http_lua_config_get_value_internal(ngx_http_request_t *r,
+    u_char *name, size_t len, ngx_str_t *value);
 
+static ngx_int_t ngx_http_lua_config_init(ngx_conf_t *cf);
 static int ngx_http_lua_config_create_module(lua_State *L);
 static int ngx_http_lua_config_get_config(lua_State *L);
 static ngx_int_t ngx_http_lua_config_prefix_variable(ngx_http_request_t *r,
