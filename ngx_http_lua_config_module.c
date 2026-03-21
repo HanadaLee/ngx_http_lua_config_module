@@ -20,11 +20,23 @@ ngx_module_t  ngx_http_lua_config_module;
 
 
 typedef struct {
-    ngx_array_t              *keys;
-    ngx_hash_keys_arrays_t   *hash_keys;
-    ngx_hash_t                hash;
-    ngx_uint_t                hash_max_size;
-    ngx_uint_t                hash_bucket_size;
+    ngx_http_complex_value_t   *value;       /* complex value */
+    ngx_http_complex_value_t   *filter;      /* filter complex value */
+    ngx_uint_t                  negative;    /* negative filter */
+} ngx_http_lua_config_cmd_t;
+
+
+typedef struct {
+    ngx_str_t                   key;
+    ngx_array_t                *cmds;
+} ngx_http_lua_config_keyval_t;
+
+
+typedef struct {
+    ngx_array_t                *keys;
+    ngx_hash_t                  hash;
+    ngx_uint_t                  hash_max_size;
+    ngx_uint_t                  hash_bucket_size;
 } ngx_http_lua_config_loc_conf_t;
 
 
@@ -46,7 +58,7 @@ static ngx_int_t ngx_http_lua_config_prefix_variable(ngx_http_request_t *r,
 static ngx_command_t  ngx_http_lua_config_commands[] = {
 
     { ngx_string("lua_config"),
-      NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE2,
+      NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE23,
       ngx_http_lua_config_directive,
       NGX_HTTP_LOC_CONF_OFFSET,
       0,
@@ -130,14 +142,12 @@ static ngx_int_t
 ngx_http_lua_config_prefix_variable(ngx_http_request_t *r,
     ngx_http_variable_value_t *v, uintptr_t data)
 {
-    ngx_str_t *name = (ngx_str_t *) data;
+    ngx_str_t  *name = (ngx_str_t *) data;
 
-    ngx_http_lua_config_loc_conf_t  *lccf;
-
-    u_char         *lua_config;
-    size_t          len;
-    ngx_keyval_t   *kv;
-    ngx_uint_t      key;
+    u_char     *lua_config;
+    size_t      len;
+    ngx_str_t   value;
+    ngx_int_t   rc;
 
     len = name->len - (sizeof("lua_config_") - 1);
     lua_config = name->data + sizeof("lua_config_") - 1;
@@ -147,29 +157,18 @@ ngx_http_lua_config_prefix_variable(ngx_http_request_t *r,
         return NGX_OK;
     }
 
-    lccf = ngx_http_get_module_loc_conf(r, ngx_http_lua_config_module);
-
-    if (lccf == NULL || lccf->keys == NULL || lccf->hash.buckets == NULL) {
-        v->not_found = 1;
-        return NGX_OK;
-    }
-
-    key = ngx_hash_key(lua_config, len);
-
-    kv = ngx_hash_find(&lccf->hash, key, lua_config, len);
-    if (kv == NULL) {
-        v->not_found = 1;
-        return NGX_OK;
-    }
-
-    v->data = ngx_pnalloc(r->pool, kv->value.len);
-    if (v->data == NULL) {
+    rc = ngx_http_lua_config_get_value_internal(r, lua_config, len, &value);
+    if (rc == NGX_ERROR) {
         return NGX_ERROR;
     }
 
-    ngx_memcpy(v->data, kv->value.data, kv->value.len);
+    if (rc != NGX_OK) {
+        v->not_found = 1;
+        return NGX_OK;
+    }
 
-    v->len = kv->value.len;
+    v->data = value.data;
+    v->len = value.len;
     v->valid = 1;
     v->no_cacheable = 0;
     v->not_found = 0;
@@ -206,7 +205,6 @@ ngx_http_lua_config_create_loc_conf(ngx_conf_t *cf)
      * set by ngx_pcalloc():
      *
      *     conf->hash = { NULL };
-     *     conf->hash_keys = NULL;
      *     conf->keys = NULL;
      */
 
@@ -224,48 +222,25 @@ ngx_http_lua_config_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
     ngx_http_lua_config_loc_conf_t  *conf = child;
 
     ngx_hash_init_t                  hash;
+    ngx_hash_keys_arrays_t           ha;
     ngx_uint_t                       i, j, found;
-    ngx_keyval_t                    *src, *dst, *kv;
-
-    /* init hash in http {} context to inherit it in all servers */
-    if (prev->keys && prev->keys->nelts > 0 && prev->hash.buckets == NULL) {
-        ngx_conf_init_uint_value(prev->hash_max_size, 512);
-        ngx_conf_init_uint_value(prev->hash_bucket_size,
-                                 ngx_align(64, ngx_cacheline_size));
-
-        hash.key = ngx_hash_key;
-        hash.max_size = prev->hash_max_size;
-        hash.bucket_size = prev->hash_bucket_size;
-        hash.name = "lua_config_hash";
-        hash.pool = cf->pool;
-
-        if (prev->hash_keys->keys.nelts) {
-            hash.hash = &prev->hash;
-            hash.temp_pool = NULL;
-
-            if (ngx_hash_init(&hash, prev->hash_keys->keys.elts,
-                              prev->hash_keys->keys.nelts) != NGX_OK)
-            {
-                return NGX_CONF_ERROR;
-            }
-        }
-
-        prev->hash_keys = NULL;
-    }
+    ngx_http_lua_config_keyval_t    *src, *dst, *kv;
+    ngx_http_lua_config_cmd_t       *cmd_src, *cmd_dst;
+    ngx_uint_t                       k;
 
     ngx_conf_merge_uint_value(conf->hash_max_size, prev->hash_max_size, 512);
     ngx_conf_merge_uint_value(conf->hash_bucket_size, prev->hash_bucket_size,
                               ngx_align(64, ngx_cacheline_size));
 
-    if (conf->hash_keys == NULL) {
+    if (conf->keys == NULL) {
         conf->hash = prev->hash;
         conf->keys = prev->keys;
         return NGX_CONF_OK;
     }
-    
+
     if (prev->keys && prev->keys->nelts != 0) {
         src = prev->keys->elts;
-        for (i = 0; i < prev->keys->nelts; i++) { 
+        for (i = 0; i < prev->keys->nelts; i++) {
             found = 0;
 
             dst = conf->keys->elts;
@@ -279,6 +254,16 @@ ngx_http_lua_config_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
             }
 
             if (found) {
+                /* append parent cmds to the end of child's same-name kv */
+                cmd_src = src[i].cmds->elts;
+                for (k = 0; k < src[i].cmds->nelts; k++) {
+                    cmd_dst = ngx_array_push(dst[j].cmds);
+                    if (cmd_dst == NULL) {
+                        return NGX_CONF_ERROR;
+                    }
+                    *cmd_dst = cmd_src[k];
+                }
+
                 continue;
             }
 
@@ -288,11 +273,26 @@ ngx_http_lua_config_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
             }
 
             *kv = src[i];
-
-            if (ngx_hash_add_key(conf->hash_keys, &kv->key, kv, 0) != NGX_OK) {
-                return NGX_CONF_ERROR;
-            }
         }
+    }
+
+    ngx_memzero(&ha, sizeof(ngx_hash_keys_arrays_t));
+    ha.pool = cf->pool;
+    ha.temp_pool = cf->temp_pool;
+
+    if (ngx_hash_keys_array_init(&ha, NGX_HASH_SMALL) != NGX_OK) {
+        return NGX_CONF_ERROR;
+    }
+
+    kv = conf->keys->elts;
+    for (i = 0; i < conf->keys->nelts; i++) {
+        if (ngx_hash_add_key(&ha, &kv[i].key, &kv[i], 0) != NGX_OK) {
+            return NGX_CONF_ERROR;
+        }
+    }
+
+    if (ha.keys.nelts == 0) {
+        return NGX_CONF_OK;
     }
 
     hash.key = ngx_hash_key;
@@ -300,19 +300,12 @@ ngx_http_lua_config_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
     hash.bucket_size = conf->hash_bucket_size;
     hash.name = "lua_config_hash";
     hash.pool = cf->pool;
+    hash.temp_pool = NULL;
+    hash.hash = &conf->hash;
 
-    if (conf->hash_keys->keys.nelts) {
-        hash.hash = &conf->hash;
-        hash.temp_pool = NULL;
-
-        if (ngx_hash_init(&hash, conf->hash_keys->keys.elts,
-                          conf->hash_keys->keys.nelts) != NGX_OK)
-        {
-            return NGX_CONF_ERROR;
-        }
+    if (ngx_hash_init(&hash, ha.keys.elts, ha.keys.nelts) != NGX_OK) {
+        return NGX_CONF_ERROR;
     }
-
-    conf->hash_keys = NULL;
 
     return NGX_CONF_OK;
 }
@@ -323,16 +316,20 @@ ngx_http_lua_config_directive(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
     ngx_http_lua_config_loc_conf_t *lccf = conf;
 
-    ngx_str_t             *value;
-    u_char                *p;
-    ngx_keyval_t          *kv;
-    ngx_uint_t             i;
+    ngx_str_t                      *value;
+    u_char                         *p;
+    ngx_http_lua_config_keyval_t   *kv;
+    ngx_http_lua_config_cmd_t      *lcmd;
+    ngx_uint_t                      i;
+    ngx_str_t                       s;
+
+    ngx_http_compile_complex_value_t   ccv;
 
     value = cf->args->elts;
 
     if (value[1].len == 0) {
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                           "lua config name cannot be empty");
+                           "lua config directive name cannot be empty");
         return NGX_CONF_ERROR;
     }
 
@@ -343,13 +340,13 @@ ngx_http_lua_config_directive(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         {
             ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                                "invalid character '%c' in lua config "
-                               "name \"%V\"", *p, &value[1]);
+                               "directive name \"%V\"", *p, &value[1]);
             return NGX_CONF_ERROR;
         }
     }
 
     if (lccf->keys == NULL) { 
-        lccf->keys = ngx_array_create(cf->pool, 4, sizeof(ngx_keyval_t));
+        lccf->keys = ngx_array_create(cf->pool, 4, sizeof(ngx_http_lua_config_keyval_t));
         if (lccf->keys == NULL) {
             return NGX_CONF_ERROR;
         }
@@ -360,77 +357,147 @@ ngx_http_lua_config_directive(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         if (value[1].len == kv[i].key.len &&
             ngx_strncmp(value[1].data, kv[i].key.data, value[1].len) == 0)
         {
-            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                               "duplicate config name \"%s\"",
-                               value[1].data);
+            break;
+        }
+    }
+
+    if (i == lccf->keys->nelts) {
+        kv = ngx_array_push(lccf->keys);
+        if (kv == NULL) {
+            return NGX_CONF_ERROR;
+        }
+
+        kv->key = value[1];
+
+        kv->cmds = ngx_array_create(cf->pool, 4,
+                                    sizeof(ngx_http_lua_config_cmd_t));
+        if (kv->cmds == NULL) {
             return NGX_CONF_ERROR;
         }
     }
 
-    kv = ngx_array_push(lccf->keys);
-    if (kv == NULL) {
+    lcmd = ngx_array_push(kv->cmds);
+    if (lcmd == NULL) {
         return NGX_CONF_ERROR;
     }
 
-    kv->key = value[1];
-    kv->value = value[2];
+    ngx_memzero(&ccv, sizeof(ngx_http_compile_complex_value_t));
 
-    if (lccf->hash_keys == NULL) {
-        lccf->hash_keys = ngx_pcalloc(cf->temp_pool,
-            sizeof(ngx_hash_keys_arrays_t));
-        if (lccf->hash_keys == NULL) {
-            return NGX_CONF_ERROR;
-        }
-
-        lccf->hash_keys->pool = cf->pool;
-        lccf->hash_keys->temp_pool = cf->pool;
-
-        if (ngx_hash_keys_array_init(lccf->hash_keys, NGX_HASH_SMALL)
-            != NGX_OK)
-        {
-            return NGX_CONF_ERROR;
-        }
-    }
-
-    if (ngx_hash_add_key(lccf->hash_keys, &kv->key, kv, 0) != NGX_OK) {
+    ccv.cf = cf;
+    ccv.value = &value[2];
+    ccv.complex_value = ngx_palloc(cf->pool, sizeof(ngx_http_complex_value_t));
+    if (ccv.complex_value == NULL) {
         return NGX_CONF_ERROR;
     }
+
+    if (ngx_http_compile_complex_value(&ccv) != NGX_OK) {
+        return NGX_CONF_ERROR;
+    }
+
+    lcmd->value = ccv.complex_value;
+
+    if (cf->args->nelts == 3) {
+        lcmd->negative = 0;
+        lcmd->filter = NULL;
+        return NGX_CONF_OK;
+    }
+
+    if (ngx_strncmp(value[3].data, "if=", 3) == 0) {
+        s.len = value[3].len - 3;
+        s.data = value[3].data + 3;
+        lcmd->negative = 0;
+
+    } else if (ngx_strncmp(value[3].data, "if!=", 4) == 0) {
+        s.len = value[3].len - 4;
+        s.data = value[3].data + 4;
+        lcmd->negative = 1;
+
+    } else {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+            "invalid parameter \"%V\"", &value[3]);
+        return NGX_CONF_ERROR;
+    }
+
+    ngx_memzero(&ccv, sizeof(ngx_http_compile_complex_value_t));
+
+    ccv.cf = cf;
+    ccv.value = &s;
+    ccv.complex_value = ngx_palloc(cf->pool,
+                                sizeof(ngx_http_complex_value_t));
+    if (ccv.complex_value == NULL) {
+        return NGX_CONF_ERROR;
+    }
+
+    if (ngx_http_compile_complex_value(&ccv) != NGX_OK) {
+        return NGX_CONF_ERROR;
+    }
+
+    lcmd->filter = ccv.complex_value;
 
     return NGX_CONF_OK;
 }
 
 
-static char *
-ngx_http_lua_config_get_value_internal(ngx_http_request_t *r, u_char *name, size_t len)
+static ngx_int_t
+ngx_http_lua_config_get_value_internal(ngx_http_request_t *r, u_char *name,
+    size_t len, ngx_str_t *value)
 {
     ngx_http_lua_config_loc_conf_t  *lccf;
-    ngx_str_t                        s_name;
-    ngx_keyval_t                    *kv;
-    ngx_uint_t                       key;
+    ngx_http_lua_config_keyval_t    *kv;
+    ngx_http_lua_config_cmd_t       *cmds;
+    ngx_str_t                        s;
+    ngx_uint_t                       key, i;
 
-    s_name.len = len;
-    s_name.data = name;
-
-    if (r) {
-        lccf = ngx_http_get_module_loc_conf(r, ngx_http_lua_config_module);
-
-    } else {
-        lccf = ngx_http_cycle_get_module_main_conf(ngx_cycle,
-                                                   ngx_http_lua_config_module);
+    if (r == NULL) {
+        return NGX_DECLINED;
     }
+
+    s.len = len;
+    s.data = name;
+
+    lccf = ngx_http_get_module_loc_conf(r, ngx_http_lua_config_module);
 
     if (lccf == NULL || lccf->keys == NULL || lccf->hash.buckets == NULL) {
-        return NULL;
+        return NGX_DECLINED;
     }
 
-    key = ngx_hash_key(s_name.data, s_name.len);
+    key = ngx_hash_key(s.data, s.len);
 
-    kv = ngx_hash_find(&lccf->hash, key, s_name.data, s_name.len);
+    kv = ngx_hash_find(&lccf->hash, key, s.data, s.len);
     if (kv == NULL) {
-        return NULL;
+        return NGX_DECLINED;
     }
 
-    return (char *) kv->value.data;
+    cmds = kv->cmds->elts;
+    for (i = 0; i < kv->cmds->nelts; i++) {
+        if (cmds[i].filter) {
+            if (ngx_http_complex_value(r, cmds[i].filter, &s)
+                != NGX_OK)
+            {
+                return NGX_ERROR;
+            }
+
+            if (s.len == 0
+                || (s.len == 1 && s.data[0] == '0'))
+            {
+                if (!cmds[i].negative) {
+                    continue;
+                }
+            } else {
+                if (cmds[i].negative) {
+                    continue;
+                }
+            }
+        }
+
+        if (ngx_http_complex_value(r, cmds[i].value, value) != NGX_OK) {
+            return NGX_ERROR;
+        }
+
+        return NGX_OK;
+    }
+
+    return NGX_DECLINED;
 }
 
 
@@ -440,7 +507,8 @@ ngx_http_lua_config_get_config(lua_State *L)
     ngx_http_request_t    *r;
     u_char                *name_data;
     size_t                 name_len;
-    char                  *value;
+    ngx_str_t              value;
+    ngx_int_t              rc;
 
     if (lua_gettop(L) != 1) {
         return luaL_error(L, "exactly one argument expected");
@@ -450,10 +518,10 @@ ngx_http_lua_config_get_config(lua_State *L)
 
     r = ngx_http_lua_get_request(L);
 
-    value = ngx_http_lua_config_get_value_internal(r, name_data, name_len);
-
-    if (value) {
-        lua_pushlstring(L, value, ngx_strlen(value));
+    rc = ngx_http_lua_config_get_value_internal(r, name_data, name_len,
+                                                &value);
+    if (rc == NGX_OK) {
+        lua_pushlstring(L, (char *) value.data, value.len);
 
     } else {
         lua_pushnil(L);
