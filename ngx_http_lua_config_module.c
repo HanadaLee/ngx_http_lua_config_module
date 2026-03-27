@@ -115,7 +115,7 @@ ngx_module_t  ngx_http_lua_config_module = {
 static ngx_http_variable_t  ngx_http_lua_config_vars[] = {
 
     { ngx_string("lua_config_"), NULL, ngx_http_lua_config_prefix_variable,
-        0, NGX_HTTP_VAR_PREFIX, 0 },
+        0, NGX_HTTP_VAR_NOCACHEABLE|NGX_HTTP_VAR_PREFIX, 0 },
 
       ngx_http_null_variable
 };
