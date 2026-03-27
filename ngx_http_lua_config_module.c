@@ -154,20 +154,39 @@ ngx_http_lua_config_prefix_variable(ngx_http_request_t *r,
     len = name->len - (sizeof("lua_config_") - 1);
     lua_config = name->data + sizeof("lua_config_") - 1;
 
+    ngx_log_debug2(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                   "lua_config prefix_variable: full var name \"%V\", "
+                   "key portion len=%uz",
+                   name, len);
+
     if (len == 0) {
+        ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                       "lua_config prefix_variable: empty key, not_found=1");
         v->not_found = 1;
         return NGX_OK;
     }
 
     rc = ngx_http_lua_config_get_value_internal(r, lua_config, len, &value);
+
+    ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                   "lua_config prefix_variable: get_value_internal rc=%d", rc);
+
     if (rc == NGX_ERROR) {
         return NGX_ERROR;
     }
 
     if (rc != NGX_OK) {
+        ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                       "lua_config prefix_variable: key not found, "
+                       "not_found=1");
         v->not_found = 1;
         return NGX_OK;
     }
+
+    ngx_log_debug2(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                   "lua_config prefix_variable: resolved value \"%V\" "
+                   "(len=%uz)",
+                   &value, value.len);
 
     v->data = value.data;
     v->len = value.len;
@@ -269,6 +288,10 @@ ngx_http_lua_config_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
     }
 
     if (conf->keys == NULL) {
+        ngx_log_debug2(NGX_LOG_DEBUG_HTTP, cf->log, 0,
+                       "lua_config merge: child has no keys, "
+                       "inheriting parent (keys=%p, hash.buckets=%p)",
+                       prev->keys, prev->hash.buckets);
         conf->hash = prev->hash;
         conf->keys = prev->keys;
         return NGX_CONF_OK;
@@ -290,6 +313,10 @@ ngx_http_lua_config_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
             }
 
             if (found) {
+                ngx_log_debug2(NGX_LOG_DEBUG_HTTP, cf->log, 0,
+                               "lua_config merge: key \"%V\" exists in child, "
+                               "appending %ui parent cmds after child cmds",
+                               &src[i].key, src[i].cmds->nelts);
                 /* append parent cmds to the end of child's same-name kv */
                 cmd_src = src[i].cmds->elts;
                 for (k = 0; k < src[i].cmds->nelts; k++) {
@@ -302,6 +329,11 @@ ngx_http_lua_config_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 
                 continue;
             }
+
+            ngx_log_debug2(NGX_LOG_DEBUG_HTTP, cf->log, 0,
+                           "lua_config merge: key \"%V\" not in child, "
+                           "inheriting from parent (%ui cmds)",
+                           &src[i].key, src[i].cmds->nelts);
 
             kv = ngx_array_push(conf->keys);
             if (kv == NULL) {
@@ -485,53 +517,133 @@ ngx_http_lua_config_get_value_internal(ngx_http_request_t *r, u_char *name,
     ngx_uint_t                       key, i;
 
     if (r == NULL) {
+        ngx_log_error(NGX_LOG_WARN, ngx_cycle->log, 0,
+                      "lua_config get_value: request is NULL");
         return NGX_DECLINED;
     }
 
     s.len = len;
     s.data = name;
 
+    ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                   "lua_config get_value: looking up key \"%V\"", &s);
+
     lccf = ngx_http_get_module_loc_conf(r, ngx_http_lua_config_module);
 
-    if (lccf == NULL || lccf->keys == NULL || lccf->hash.buckets == NULL) {
+    if (lccf == NULL) {
+        ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                       "lua_config get_value: lccf is NULL, declined");
         return NGX_DECLINED;
     }
+
+    if (lccf->keys == NULL) {
+        ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                       "lua_config get_value: lccf->keys is NULL "
+                       "(no lua_config directives in this location), declined");
+        return NGX_DECLINED;
+    }
+
+    if (lccf->hash.buckets == NULL) {
+        ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                       "lua_config get_value: hash not built yet "
+                       "(keys->nelts=%ui, buckets=NULL), declined",
+                       lccf->keys->nelts);
+        return NGX_DECLINED;
+    }
+
+    ngx_log_debug2(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                   "lua_config get_value: hash ready, keys->nelts=%ui, "
+                   "hash.buckets=%p",
+                   lccf->keys->nelts, lccf->hash.buckets);
 
     key = ngx_hash_key(s.data, s.len);
 
     kv = ngx_hash_find(&lccf->hash, key, s.data, s.len);
     if (kv == NULL) {
+        ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                       "lua_config get_value: key \"%V\" not found in hash, "
+                       "declined",
+                       &s);
         return NGX_DECLINED;
     }
 
+    ngx_log_debug2(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                   "lua_config get_value: key \"%V\" found, "
+                   "cmds->nelts=%ui",
+                   &s, kv->cmds->nelts);
+
     cmds = kv->cmds->elts;
     for (i = 0; i < kv->cmds->nelts; i++) {
+        ngx_log_debug3(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                       "lua_config get_value: cmd[%ui] filter=%p negative=%ui",
+                       i, cmds[i].filter, cmds[i].negative);
+
         if (cmds[i].filter) {
             if (ngx_http_complex_value(r, cmds[i].filter, &s)
                 != NGX_OK)
             {
+                ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                               "lua_config get_value: cmd[%ui] "
+                               "complex_value(filter) failed", i);
                 return NGX_ERROR;
             }
+
+            ngx_log_debug3(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                           "lua_config get_value: cmd[%ui] filter result "
+                           "\"%V\" (len=%uz)",
+                           i, &s, s.len);
 
             if (s.len == 0
                 || (s.len == 1 && s.data[0] == '0'))
             {
+                /* filter is false/empty */
+                ngx_log_debug2(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                               "lua_config get_value: cmd[%ui] filter is "
+                               "false/empty, negative=%ui",
+                               i, cmds[i].negative);
                 if (!cmds[i].negative) {
+                    ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                                   "lua_config get_value: cmd[%ui] "
+                                   "if= condition not met, skip", i);
                     continue;
                 }
+
             } else {
+                /* filter is true/non-empty */
+                ngx_log_debug2(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                               "lua_config get_value: cmd[%ui] filter is "
+                               "true/non-empty, negative=%ui",
+                               i, cmds[i].negative);
                 if (cmds[i].negative) {
+                    ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                                   "lua_config get_value: cmd[%ui] "
+                                   "if!= condition not met, skip", i);
                     continue;
                 }
             }
         }
 
+        ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                       "lua_config get_value: cmd[%ui] condition passed, "
+                       "evaluating value", i);
+
         if (ngx_http_complex_value(r, cmds[i].value, value) != NGX_OK) {
+            ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                           "lua_config get_value: cmd[%ui] "
+                           "complex_value(value) failed", i);
             return NGX_ERROR;
         }
 
+        ngx_log_debug2(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                       "lua_config get_value: cmd[%ui] resolved to \"%V\"",
+                       i, value);
+
         return NGX_OK;
     }
+
+    ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                   "lua_config get_value: all cmds exhausted, "
+                   "no condition matched, declined");
 
     return NGX_DECLINED;
 }
