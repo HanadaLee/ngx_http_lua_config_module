@@ -234,6 +234,40 @@ ngx_http_lua_config_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
     ngx_conf_merge_uint_value(conf->hash_bucket_size, prev->hash_bucket_size,
                               ngx_align(64, ngx_cacheline_size));
 
+    if (prev->keys != NULL && prev->hash.buckets == NULL) {
+        ngx_memzero(&ha, sizeof(ngx_hash_keys_arrays_t));
+        ha.pool = cf->pool;
+        ha.temp_pool = cf->temp_pool;
+
+        if (ngx_hash_keys_array_init(&ha, NGX_HASH_SMALL) != NGX_OK) {
+            return NGX_CONF_ERROR;
+        }
+
+        kv = prev->keys->elts;
+        for (i = 0; i < prev->keys->nelts; i++) {
+            if (ngx_hash_add_key(&ha, &kv[i].key, &kv[i], 0) != NGX_OK) {
+                return NGX_CONF_ERROR;
+            }
+        }
+
+        if (ha.keys.nelts > 0) {
+            hash.key = ngx_hash_key;
+            hash.max_size = (prev->hash_max_size != NGX_CONF_UNSET_UINT)
+                            ? prev->hash_max_size : 512;
+            hash.bucket_size = (prev->hash_bucket_size != NGX_CONF_UNSET_UINT)
+                                ? prev->hash_bucket_size
+                                : ngx_align(64, ngx_cacheline_size);
+            hash.name = "lua_config_hash";
+            hash.pool = cf->pool;
+            hash.temp_pool = NULL;
+            hash.hash = &prev->hash;
+
+            if (ngx_hash_init(&hash, ha.keys.elts, ha.keys.nelts) != NGX_OK) {
+                return NGX_CONF_ERROR;
+            }
+        }
+    }
+
     if (conf->keys == NULL) {
         conf->hash = prev->hash;
         conf->keys = prev->keys;
