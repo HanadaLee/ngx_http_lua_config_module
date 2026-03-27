@@ -420,8 +420,8 @@ ngx_http_lua_config_directive(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         }
     }
 
+    kv = lccf->keys->elts;
     for (i = 0; i < lccf->keys->nelts; i++) {
-        kv = lccf->keys->elts;
         if (value[1].len == kv[i].key.len &&
             ngx_strncmp(value[1].data, kv[i].key.data, value[1].len) == 0)
         {
@@ -442,6 +442,9 @@ ngx_http_lua_config_directive(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         if (kv->cmds == NULL) {
             return NGX_CONF_ERROR;
         }
+
+    } else {
+        kv = &kv[i];
     }
 
     lcmd = ngx_array_push(kv->cmds);
