@@ -153,7 +153,7 @@ ngx_module_t  ngx_http_lua_config_module = {
 static ngx_http_variable_t  ngx_http_lua_config_vars[] = {
 
     { ngx_string("lua_config_"), NULL, ngx_http_lua_config_prefix_variable,
-        0, NGX_HTTP_VAR_NOCACHEABLE|NGX_HTTP_VAR_PREFIX, 0 },
+    0, NGX_HTTP_VAR_NOCACHEABLE|NGX_HTTP_VAR_PREFIX, 0 },
 
       ngx_http_null_variable
 };
@@ -420,7 +420,8 @@ ngx_http_lua_config_directive(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     }
 
     if (lccf->keys == NULL) { 
-        lccf->keys = ngx_array_create(cf->pool, 4, sizeof(ngx_http_lua_config_keyval_t));
+        lccf->keys = ngx_array_create(cf->pool, 4,
+                                      sizeof(ngx_http_lua_config_keyval_t));
         if (lccf->keys == NULL) {
             return NGX_CONF_ERROR;
         }
@@ -782,6 +783,7 @@ ngx_http_lua_upstream(ngx_conf_t *cf, ngx_command_t *dummy, void *conf)
         }
 
         ngx_memzero(&u, sizeof(ngx_url_t));
+
         u.url = value[1];
         u.default_port = 0;
         u.no_resolve = 1;
@@ -791,6 +793,7 @@ ngx_http_lua_upstream(ngx_conf_t *cf, ngx_command_t *dummy, void *conf)
                 ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                                    "%s in upstream \"%V\"", u.err, &u.url);
             }
+
             return NGX_CONF_ERROR;
         }
 
@@ -802,24 +805,28 @@ ngx_http_lua_upstream(ngx_conf_t *cf, ngx_command_t *dummy, void *conf)
             if (ngx_strncmp(value[i].data, "level=", 6) == 0) {
                 server->level = ngx_atoi(value[i].data + 6,
                                          value[i].len - 6);
+
                 if (server->level == (ngx_uint_t) NGX_ERROR) {
                     ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                                        "invalid level value \"%V\"",
                                        &value[i]);
                     return NGX_CONF_ERROR;
                 }
+
                 continue;
             }
 
             if (ngx_strncmp(value[i].data, "weight=", 7) == 0) {
                 server->weight = ngx_atoi(value[i].data + 7,
                                           value[i].len - 7);
+
                 if (server->weight == (ngx_uint_t) NGX_ERROR) {
                     ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                                        "invalid weight value \"%V\"",
                                        &value[i]);
                     return NGX_CONF_ERROR;
                 }
+
                 continue;
             }
 
@@ -1004,6 +1011,7 @@ ngx_http_lua_config_get_value_internal(ngx_http_request_t *r, u_char *name,
                 if (!cmds[i].negative) {
                     continue;
                 }
+
             } else {
                 if (cmds[i].negative) {
                     continue;
@@ -1039,8 +1047,7 @@ ngx_http_lua_config_get_config(lua_State *L)
 
     r = ngx_http_lua_get_request(L);
 
-    rc = ngx_http_lua_config_get_value_internal(r, name_data, name_len,
-                                                &value);
+    rc = ngx_http_lua_config_get_value_internal(r, name_data, name_len, &value);
     if (rc == NGX_OK) {
         lua_pushlstring(L, (char *) value.data, value.len);
 
@@ -1066,6 +1073,7 @@ ngx_http_lua_upstream_key_cmp(const void *a, const void *b)
     if (rc != 0) {
         return rc;
     }
+
     return (int) ka->key.len - (int) kb->key.len;
 }
 
@@ -1210,6 +1218,7 @@ ngx_http_lua_config_get_upstream(lua_State *L)
                     if (!cmds[j].negative) {
                         continue;
                     }
+
                 } else {
                     if (cmds[j].negative) {
                         continue;
@@ -1233,8 +1242,7 @@ ngx_http_lua_config_get_upstream(lua_State *L)
             ngx_crc32_update(&crc, (u_char *) "=", 1);
             ngx_crc32_update(&crc, val.data, val.len);
 
-            lua_setfield(L, -2,
-                         (char *) sorted_kv[i].key.data);
+            lua_setfield(L, -2, (char *) sorted_kv[i].key.data);
             break;
         }
     }
