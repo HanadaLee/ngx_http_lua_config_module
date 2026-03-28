@@ -414,7 +414,7 @@ ngx_http_lua_config_directive(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         {
             ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                                "invalid character in lua config "
-                               "directive name \"%V\"", *p, &value[1]);
+                               "directive name \"%V\"", &value[1]);
             return NGX_CONF_ERROR;
         }
     }
@@ -1084,7 +1084,7 @@ ngx_http_lua_config_get_upstream(lua_State *L)
     u_char                          *name_data;
     size_t                           name_len;
     uint32_t                         crc;
-    u_char                           crc_str[12];
+    u_char                           crc_str[8];
     size_t                           crc_str_len;
 
     u_char                           num_buf[NGX_INT_T_LEN];
