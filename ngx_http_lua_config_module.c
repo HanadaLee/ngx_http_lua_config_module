@@ -859,19 +859,6 @@ ngx_http_lua_upstream(ngx_conf_t *cf, ngx_command_t *dummy, void *conf)
         return NGX_CONF_ERROR;
     }
 
-    /* validate key name */
-    for (p = value[0].data; p < value[0].data + value[0].len; p++) {
-        if (!((*p >= '0' && *p <= '9')
-              || (*p >= 'a' && *p <= 'z')
-              || *p == '_'))
-        {
-            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                               "invalid character in lua_upstream "
-                               "config key \"%V\"", &value[0]);
-            return NGX_CONF_ERROR;
-        }
-    }
-
     if (ngx_strcmp(value[0].data, "name") == 0
         || ngx_strcmp(value[0].data, "crc32") == 0)
     {
