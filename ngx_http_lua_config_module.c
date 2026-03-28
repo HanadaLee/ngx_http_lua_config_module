@@ -770,7 +770,7 @@ ngx_http_lua_upstream(ngx_conf_t *cf, ngx_command_t *dummy, void *conf)
             return NGX_CONF_ERROR;
         }
 
-        server->level = 0;
+        server->level = 1;
         server->weight = 1;
         server->down = 0;
         server->port = 0;

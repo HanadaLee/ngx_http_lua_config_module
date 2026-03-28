@@ -247,8 +247,8 @@ Retrieves the upstream configuration defined by `lua_upstream` for the given `na
     *   `servers` (array): Each entry is a table with:
         *   `host` (string): The server host.
         *   `port` (number): The server port (`0` if not specified).
-        *   `level` (number): The server level.
-        *   `weight` (number): The server weight.
+        *   `level` (number): The server level (`1` if not specified).
+        *   `weight` (number): The server weight.(`1` if not specified).
         *   `down` (boolean): Whether the server is marked down.
     *   Config keys: Each key defined in the block appears as a field. Boolean keys have value `true`; other keys have their resolved string value (with variables evaluated and conditions applied).
     *   `crc32` (string): A CRC32 checksum (decimal string) computed from the upstream name, all server entries, and all config key-value pairs (keys sorted alphabetically). The checksum changes when any resolved value changes, making it useful for detecting configuration drift.
