@@ -827,6 +827,13 @@ ngx_http_lua_upstream(ngx_conf_t *cf, ngx_command_t *dummy, void *conf)
                     return NGX_CONF_ERROR;
                 }
 
+                if (server->weight == 0) {
+                    ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                                       "weight value cannot be zero "
+                                       "\"%V\"", &value[i]);
+                    return NGX_CONF_ERROR;
+                }
+
                 continue;
             }
 
