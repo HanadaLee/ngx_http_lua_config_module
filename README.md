@@ -33,19 +33,18 @@ This Nginx module is currently considered experimental. Issues and PRs are welco
 http {
     lua_config server_id my_server_id;
 
-    lua_upstream backend {
-        server 127.0.0.1:8080 weight=5;
-        server 10.0.0.2:8080 level=1;
-        keepalive;
-        timeout 60s;
-    }
-
     server {
         listen 80;
         server_name example.com;
 
         # Local configuration overrides parent configuration
         lua_config server_id my_server_id_A;
+
+        lua_upstream backend {
+            server 127.0.0.1:8080 weight=5;
+            server 10.0.0.2:8080 level=1;
+            keepalive_timeout 60s;
+        }
 
         location /api {
             # Local configuration

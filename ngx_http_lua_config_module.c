@@ -858,6 +858,14 @@ ngx_http_lua_upstream(ngx_conf_t *cf, ngx_command_t *dummy, void *conf)
         }
     }
 
+    if (ngx_strcmp(value[0].data, "name") == 0
+        || ngx_strcmp(value[0].data, "crc32") == 0)
+    {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                           "invalid directive name in lua_upstream");
+        return NGX_CONF_ERROR;
+    }
+
     /* find or create keyval */
     kv = us->keys->elts;
     for (i = 0; i < us->keys->nelts; i++) {
@@ -1233,7 +1241,7 @@ ngx_http_lua_config_get_upstream(lua_State *L)
 
     /* compute crc32 */
     ngx_crc32_final(crc);
-    crc_str_len = ngx_sprintf(crc_str, "%uD", crc) - crc_str;
+    crc_str_len = ngx_sprintf(crc_str, "%08xD", crc) - crc_str;
 
     lua_pushlstring(L, (char *) crc_str, crc_str_len);
     lua_setfield(L, -2, "crc32");
