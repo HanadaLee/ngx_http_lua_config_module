@@ -16,11 +16,13 @@
     - [`lua_config_hash_max_size`](#lua_config_hash_max_size)
     - [`lua_config_hash_bucket_size`](#lua_config_hash_bucket_size)
     - [`lua_upstream`](#lua_upstream)
+    - [`lua_init_config`](#lua_init_config)
 - [Variables](#variables)
     - [`$lua_config_name`](#lua_config_name)
 - [Lua API](#lua-api)
     - [`ngx.lua_config.get(key)`](#ngxlua_configgetkey)
     - [`ngx.lua_config.get_upstream(name)`](#ngxlua_configget_upstreamname)
+    - [`ngx.lua_config.get_init_configs()`](#ngxlua_configget_init_configs)
 - [Author](#author)
 - [License](#license)
 
@@ -97,22 +99,22 @@ To use this module, configure your Nginx branch with `--add-module=/path/to/ngx_
 
 ### `lua_config`
 
-**Syntax:** `lua_config key value [if=condition];`
+**Syntax:** `lua_config key string ... [separator=,] [if=condition];`
 
 **Default:** `-`
 
 **Context:** `http`, `server`, `location`
 
-Defines a key-value configuration item.
-*   `key`: The key name, only allowed to contain lowercase letters, numbers, and underscores. The same key cannot be defined repeatedly within the same `context`.
-*   `value`: The key's value, an arbitrary string. it can contain variables.
-*   `if`: enables conditional value. If the `condition` evaluates to “0” or an empty string, the subsequent definition of `key` will be evaluated. If none of the definitions are met, the Lua code will return `nil`.
+Defines a key-value configuration item. The `key` parameter only allowed to contain lowercase letters, numbers, and underscores.
+The `string` parameters can contain variables. Multiple `string` parameters ​​will be concatenated using a `separator`. The default `separator` is `,`
+The `if` parameter enables conditional value. If the `condition` evaluates to “0” or an empty string, the subsequent definition of `key` will be evaluated. If none of the definitions are met, the Lua code will return `nil`.
 
 **Example:**
 
 ```nginx
 lua_config data_source primary;
 lua_config set_header $arg_test if=$arg_test;
+lua_config allow_methods GET HEAD POST;
 lua_config cache_timeout 300s;
 ```
 
@@ -163,7 +165,6 @@ server host[:port] [level=N] [weight=N] [down];
 **Config items:**
 
 ```
-key;                      # boolean (true)
 key value;                # key-value pair
 key value if=condition;   # conditional value
 key value if!=condition;  # negative conditional value
@@ -190,6 +191,25 @@ http {
             server 10.0.0.1:9090;
         }
     }
+}
+```
+
+### `lua_init_config`
+
+**Syntax:** `lua_init_config key value;`
+
+**Default:** `-`
+
+**Context:** `http`
+
+Defines a static key-value configuration item that is available during the `init` and `init_worker` phases, before any request is processed. Unlike `lua_config`, this directive does not support variables or conditional evaluation — values are plain strings.
+
+**Example:**
+
+```nginx
+http {
+    lua_init_config app_name my_application;
+    lua_init_config version 1.0.0;
 }
 ```
 
@@ -236,7 +256,7 @@ end
 
 **Syntax:** `result = ngx.lua_config.get_upstream(name)`
 
-**Context:** `set_by_lua*`, `rewrite_by_lua*`, `access_by_lua*`, `content_by_lua*`, `header_filter_by_lua*`, `body_filter_by_lua*`, `log_by_lua*`, `balancer_by_lua*`
+**Context:** `server_rewrite_by_lua*`, `set_by_lua*`, `rewrite_by_lua*`, `access_by_lua*`, `precontent_by_lua*`, `content_by_lua*`, `header_filter_by_lua*`, `body_filter_by_lua*`, `log_by_lua*`, `balancer_by_lua*`, `proxy_ssl_certificate_by_lua_*`, `proxy_ssl_verify_by_lua_*`
 
 Retrieves the upstream configuration defined by `lua_upstream` for the given `name`.
 
@@ -250,7 +270,7 @@ Retrieves the upstream configuration defined by `lua_upstream` for the given `na
         *   `level` (number): The server level (`1` if not specified).
         *   `weight` (number): The server weight.(`1` if not specified).
         *   `down` (boolean): Whether the server is marked down.
-    *   Config keys: Each key defined in the block appears as a field. Boolean keys have value `true`; other keys have their resolved string value (with variables evaluated and conditions applied).
+    *   config keys: Each key defined in the block appears as a field. All Keys have their resolved string value (with variables evaluated and conditions applied).
     *   `crc32` (string): A CRC32 checksum (decimal string) computed from the upstream name, all server entries, and all config key-value pairs (keys sorted alphabetically). The checksum changes when any resolved value changes, making it useful for detecting configuration drift.
 
 **Example:**
@@ -274,6 +294,26 @@ end
 
 if up.keepalive_timeout then
     ngx.say("keepalive_timeout: ", up.keepalive_timeout) -- "60s" (string value)
+end
+```
+
+
+### `ngx.lua_config.get_init_configs()`
+
+**Syntax:** `configs = ngx.lua_config.get_init_configs()`
+
+**Context:** `any`
+
+Returns a table containing all key-value pairs defined by `lua_init_config` directives. Returns an empty table if no `lua_init_config` directives are defined.
+
+**Example:**
+
+```lua
+local lua_config = require "ngx.lua_config"
+local configs = lua_config.get_init_configs()
+
+for k, v in pairs(configs) do
+    ngx.log(ngx.INFO, k, " = ", v)
 end
 ```
 

@@ -102,7 +102,7 @@ static ngx_int_t ngx_http_lua_config_prefix_variable(ngx_http_request_t *r,
 static ngx_command_t  ngx_http_lua_config_commands[] = {
 
     { ngx_string("lua_config"),
-      NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE23,
+      NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_2MORE,
       ngx_http_lua_config_directive,
       NGX_HTTP_LOC_CONF_OFFSET,
       0,
@@ -350,8 +350,8 @@ ngx_http_lua_config_directive(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     u_char                         *p;
     ngx_http_lua_config_keyval_t   *kv;
     ngx_http_lua_config_cmd_t      *lcmd;
-    ngx_uint_t                      i;
-    ngx_str_t                       s;
+    ngx_uint_t                      i, last;
+    ngx_str_t                       s, separator;
 
     ngx_http_compile_complex_value_t   ccv;
 
@@ -415,10 +415,111 @@ ngx_http_lua_config_directive(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return NGX_CONF_ERROR;
     }
 
+    lcmd->negative = 0;
+    lcmd->filter = NULL;
+
+    last = cf->args->nelts - 1;
+
+    if (ngx_strncmp(value[last].data, "if=", 3) == 0) {
+        s.len = value[last].len - 3;
+        s.data = value[last].data + 3;
+        lcmd->negative = 0;
+
+        ngx_memzero(&ccv, sizeof(ngx_http_compile_complex_value_t));
+
+        ccv.cf = cf;
+        ccv.value = &s;
+        ccv.complex_value = ngx_palloc(cf->pool,
+                                    sizeof(ngx_http_complex_value_t));
+        if (ccv.complex_value == NULL) {
+            return NGX_CONF_ERROR;
+        }
+
+        if (ngx_http_compile_complex_value(&ccv) != NGX_OK) {
+            return NGX_CONF_ERROR;
+        }
+
+        lcmd->filter = ccv.complex_value;
+        last--;
+
+    } else if (ngx_strncmp(value[last].data, "if!=", 4) == 0) {
+        s.len = value[last].len - 4;
+        s.data = value[last].data + 4;
+        lcmd->negative = 1;
+
+        ngx_memzero(&ccv, sizeof(ngx_http_compile_complex_value_t));
+
+        ccv.cf = cf;
+        ccv.value = &s;
+        ccv.complex_value = ngx_palloc(cf->pool,
+                                    sizeof(ngx_http_complex_value_t));
+        if (ccv.complex_value == NULL) {
+            return NGX_CONF_ERROR;
+        }
+
+        if (ngx_http_compile_complex_value(&ccv) != NGX_OK) {
+            return NGX_CONF_ERROR;
+        }
+
+        lcmd->filter = ccv.complex_value;
+        last--;
+    }
+
+    separator.len = 1;
+
+    if (last >= 3
+        && ngx_strncmp(value[last].data, "separator=", 10) == 0)
+    {
+        if (value[last].len != 11) {
+            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                               "invalid separator: \"%V\"",
+                               &value[last]);
+            return NGX_CONF_ERROR;
+        }
+
+        separator.data = value[last].data + 10;
+        last--;
+
+    } else {
+        separator.data = (u_char *) ",";
+    }
+
+    if (last < 2) {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                           "no value specified for lua_config \"%V\"",
+                           &value[1]);
+        return NGX_CONF_ERROR;
+    }
+
+    if (last == 2) {
+        s = value[2];
+
+    } else {
+        s.len = separator.len * (last - 2);
+
+        for (i = 2; i <= last; i++) {
+            s.len += value[i].len;
+        }
+
+        p = ngx_pnalloc(cf->pool, s.len);
+        if (p == NULL) {
+            return NGX_CONF_ERROR;
+        }
+
+        s.data = p;
+
+        p = ngx_cpymem(p, value[2].data, value[2].len);
+
+        for (i = 3; i <= last; i++) {
+            p = ngx_cpymem(p, separator.data, separator.len);
+            p = ngx_cpymem(p, value[i].data, value[i].len);
+        }
+    }
+
     ngx_memzero(&ccv, sizeof(ngx_http_compile_complex_value_t));
 
     ccv.cf = cf;
-    ccv.value = &value[2];
+    ccv.value = &s;
     ccv.complex_value = ngx_palloc(cf->pool, sizeof(ngx_http_complex_value_t));
     if (ccv.complex_value == NULL) {
         return NGX_CONF_ERROR;
@@ -429,44 +530,6 @@ ngx_http_lua_config_directive(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     }
 
     lcmd->value = ccv.complex_value;
-
-    if (cf->args->nelts == 3) {
-        lcmd->negative = 0;
-        lcmd->filter = NULL;
-        return NGX_CONF_OK;
-    }
-
-    if (ngx_strncmp(value[3].data, "if=", 3) == 0) {
-        s.len = value[3].len - 3;
-        s.data = value[3].data + 3;
-        lcmd->negative = 0;
-
-    } else if (ngx_strncmp(value[3].data, "if!=", 4) == 0) {
-        s.len = value[3].len - 4;
-        s.data = value[3].data + 4;
-        lcmd->negative = 1;
-
-    } else {
-        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-            "invalid parameter \"%V\"", &value[3]);
-        return NGX_CONF_ERROR;
-    }
-
-    ngx_memzero(&ccv, sizeof(ngx_http_compile_complex_value_t));
-
-    ccv.cf = cf;
-    ccv.value = &s;
-    ccv.complex_value = ngx_palloc(cf->pool,
-                                sizeof(ngx_http_complex_value_t));
-    if (ccv.complex_value == NULL) {
-        return NGX_CONF_ERROR;
-    }
-
-    if (ngx_http_compile_complex_value(&ccv) != NGX_OK) {
-        return NGX_CONF_ERROR;
-    }
-
-    lcmd->filter = ccv.complex_value;
 
     return NGX_CONF_OK;
 }
@@ -855,12 +918,12 @@ ngx_http_lua_upstream(ngx_conf_t *cf, ngx_command_t *dummy, void *conf)
     ngx_http_lua_config_srv_conf_t  *lscf = conf;
     ngx_http_lua_upstream_t         *us;
     ngx_str_t                       *value;
-    ngx_uint_t                       i;
+    ngx_uint_t                       i, last;
     ngx_http_lua_upstream_server_t  *server;
     ngx_http_lua_config_keyval_t    *kv;
     ngx_http_lua_config_cmd_t       *lcmd;
     ngx_http_compile_complex_value_t ccv;
-    ngx_str_t                        s;
+    ngx_str_t                        s, separator;
     ngx_url_t                        u;
     u_char                          *p;
 
@@ -970,8 +1033,8 @@ ngx_http_lua_upstream(ngx_conf_t *cf, ngx_command_t *dummy, void *conf)
         return NGX_CONF_OK;
     }
 
-    /* parse other config items: key [value [if=cond/if!=cond]] */
-    if (cf->args->nelts != 2 && cf->args->nelts != 3) {
+    /* parse other config items: key arg1 [arg2 ...] [separator=X] [if=|if!=] */
+    if (cf->args->nelts < 2) {
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                             "invalid number of the lua_upstream parameters");
         return NGX_CONF_ERROR;
@@ -1031,11 +1094,113 @@ ngx_http_lua_upstream(ngx_conf_t *cf, ngx_command_t *dummy, void *conf)
         return NGX_CONF_ERROR;
     }
 
-    /* compile value */
+    lcmd->negative = 0;
+    lcmd->filter = NULL;
+
+    last = cf->args->nelts - 1;
+
+    separator.len = 1;
+
+    /* check for if=/if!= at the end */
+    if (ngx_strncmp(value[last].data, "if=", 3) == 0) {
+        s.len = value[last].len - 3;
+        s.data = value[last].data + 3;
+
+        ngx_memzero(&ccv, sizeof(ngx_http_compile_complex_value_t));
+
+        ccv.cf = cf;
+        ccv.value = &s;
+        ccv.complex_value = ngx_palloc(cf->pool,
+                                       sizeof(ngx_http_complex_value_t));
+        if (ccv.complex_value == NULL) {
+            return NGX_CONF_ERROR;
+        }
+
+        if (ngx_http_compile_complex_value(&ccv) != NGX_OK) {
+            return NGX_CONF_ERROR;
+        }
+
+        lcmd->filter = ccv.complex_value;
+        lcmd->negative = 0;
+        last--;
+
+    } else if (ngx_strncmp(value[last].data, "if!=", 4) == 0) {
+        s.len = value[last].len - 4;
+        s.data = value[last].data + 4;
+        
+
+        ngx_memzero(&ccv, sizeof(ngx_http_compile_complex_value_t));
+
+        ccv.cf = cf;
+        ccv.value = &s;
+        ccv.complex_value = ngx_palloc(cf->pool,
+                                       sizeof(ngx_http_complex_value_t));
+        if (ccv.complex_value == NULL) {
+            return NGX_CONF_ERROR;
+        }
+
+        if (ngx_http_compile_complex_value(&ccv) != NGX_OK) {
+            return NGX_CONF_ERROR;
+        }
+
+        lcmd->filter = ccv.complex_value;
+        lcmd->negative = 1;
+        last--;
+    }
+
+    if (last >= 2
+        && ngx_strncmp(value[last].data, "separator=", 10) == 0)
+    {
+        if (value[last].len != 11) {
+            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                               "invalid separator: \"%V\"",
+                               &value[last]);
+            return NGX_CONF_ERROR;
+        }
+
+        separator.data = value[last].data + 10;
+        last--;
+
+    } else {
+        separator.data = (u_char *) ",";
+    }
+
+    if (last < 1) {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                           "no value specified for lua_upstream "
+                           "config key \"%V\"", &value[0]);
+        return NGX_CONF_ERROR;
+    }
+
+    if (last == 1) {
+        s = value[1];
+
+    } else {
+        s.len = last - 1;
+
+        for (i = 1; i <= last; i++) {
+            s.len += value[i].len;
+        }
+
+        p = ngx_pnalloc(cf->pool, s.len);
+        if (p == NULL) {
+            return NGX_CONF_ERROR;
+        }
+
+        s.data = p;
+
+        p = ngx_cpymem(p, value[1].data, value[1].len);
+
+        for (i = 2; i <= last; i++) {
+            p = ngx_cpymem(p, separator.data, separator.len);
+            p = ngx_cpymem(p, value[i].data, value[i].len);
+        }
+    }
+
     ngx_memzero(&ccv, sizeof(ngx_http_compile_complex_value_t));
 
     ccv.cf = cf;
-    ccv.value = &value[1];
+    ccv.value = &s;
     ccv.complex_value = ngx_palloc(cf->pool, sizeof(ngx_http_complex_value_t));
     if (ccv.complex_value == NULL) {
         return NGX_CONF_ERROR;
@@ -1046,46 +1211,6 @@ ngx_http_lua_upstream(ngx_conf_t *cf, ngx_command_t *dummy, void *conf)
     }
 
     lcmd->value = ccv.complex_value;
-
-    if (cf->args->nelts == 2) {
-        lcmd->filter = NULL;
-        lcmd->negative = 0;
-        return NGX_CONF_OK;
-    }
-
-    /* parse if=/if!= filter */
-    if (ngx_strncmp(value[2].data, "if=", 3) == 0) {
-        s.len = value[2].len - 3;
-        s.data = value[2].data + 3;
-        lcmd->negative = 0;
-
-    } else if (ngx_strncmp(value[2].data, "if!=", 4) == 0) {
-        s.len = value[2].len - 4;
-        s.data = value[2].data + 4;
-        lcmd->negative = 1;
-
-    } else {
-        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                           "invalid parameter \"%V\" in lua_upstream",
-                           &value[2]);
-        return NGX_CONF_ERROR;
-    }
-
-    ngx_memzero(&ccv, sizeof(ngx_http_compile_complex_value_t));
-
-    ccv.cf = cf;
-    ccv.value = &s;
-    ccv.complex_value = ngx_palloc(cf->pool, sizeof(ngx_http_complex_value_t));
-
-    if (ccv.complex_value == NULL) {
-        return NGX_CONF_ERROR;
-    }
-
-    if (ngx_http_compile_complex_value(&ccv) != NGX_OK) {
-        return NGX_CONF_ERROR;
-    }
-
-    lcmd->filter = ccv.complex_value;
 
     return NGX_CONF_OK;
 }
