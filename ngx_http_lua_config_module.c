@@ -130,7 +130,7 @@ static ngx_command_t  ngx_http_lua_config_commands[] = {
       NULL },
 
     { ngx_string("lua_init_config"),
-      NGX_HTTP_MAIN_CONF|NGX_CONF_TAKE2,
+      NGX_HTTP_MAIN_CONF|NGX_CONF_2MORE,
       ngx_http_lua_init_config_directive,
       NGX_HTTP_MAIN_CONF_OFFSET,
       0,
@@ -257,8 +257,9 @@ ngx_http_lua_init_config_directive(ngx_conf_t *cf, ngx_command_t *cmd,
 
     ngx_str_t                        *value;
     u_char                           *p;
-    ngx_keyval_t    *kv;
-    ngx_uint_t                        i;
+    ngx_keyval_t                     *kv;
+    ngx_uint_t                        i, last;
+    ngx_str_t                         separator;
 
     value = cf->args->elts;
 
@@ -307,7 +308,54 @@ ngx_http_lua_init_config_directive(ngx_conf_t *cf, ngx_command_t *cmd,
     }
 
     kv->key = value[1];
-    kv->value = value[2];
+
+    last = cf->args->nelts - 1;
+
+    separator.len = 1;
+
+    /* check for separator= */
+    if (last >= 3
+        && ngx_strncmp(value[last].data, "separator=", 10) == 0)
+    {
+        if (value[last].len != 11) {
+            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                               "invalid separator: \"%V\"",
+                               &value[last]);
+            return NGX_CONF_ERROR;
+        }
+
+        separator.data = value[last].data + 10;
+        last--;
+
+    } else {
+        separator.data = (u_char *) ",";
+    }
+
+    /* join value[2..last] with separator */
+    if (last == 2) {
+        kv->value = value[2];
+
+    } else {
+        kv->value.len = last - 2;
+
+        for (i = 2; i <= last; i++) {
+            kv->value.len += value[i].len;
+        }
+
+        p = ngx_pnalloc(cf->pool, kv->value.len);
+        if (p == NULL) {
+            return NGX_CONF_ERROR;
+        }
+
+        kv->value.data = p;
+
+        p = ngx_cpymem(p, value[2].data, value[2].len);
+
+        for (i = 3; i <= last; i++) {
+            p = ngx_cpymem(p, separator.data, separator.len);
+            p = ngx_cpymem(p, value[i].data, value[i].len);
+        }
+    }
 
     return NGX_CONF_OK;
 }

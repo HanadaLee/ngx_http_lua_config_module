@@ -196,13 +196,13 @@ http {
 
 ### `lua_init_config`
 
-**Syntax:** `lua_init_config key value;`
+**Syntax:** `lua_init_config key string ... [separator=,];`
 
 **Default:** `-`
 
 **Context:** `http`
 
-Defines a static key-value configuration item that is available during the `init` and `init_worker` phases, before any request is processed. Unlike `lua_config`, this directive does not support variables or conditional evaluation — values are plain strings.
+Defines a static key-value configuration item that is available during the `init` and `init_worker` phases, before any request is processed. Unlike `lua_config`, this directive does not support variables or conditional evaluation — values are plain strings. Multiple `string` parameters will be concatenated using a `separator`. The default `separator` is `,`.
 
 **Example:**
 
@@ -210,6 +210,8 @@ Defines a static key-value configuration item that is available during the `init
 http {
     lua_init_config app_name my_application;
     lua_init_config version 1.0.0;
+    lua_init_config allowed_origins http://a.com http://b.com http://c.com;
+    lua_init_config allowed_methods GET HEAD POST separator=|;
 }
 ```
 
