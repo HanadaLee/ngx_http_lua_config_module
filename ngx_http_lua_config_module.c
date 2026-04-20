@@ -253,7 +253,7 @@ static char *
 ngx_http_lua_init_config_directive(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf)
 {
-    ngx_http_lua_config_main_conf_t  *mcf = conf;
+    ngx_http_lua_config_main_conf_t  *lmcf = conf;
 
     ngx_str_t                        *value;
     u_char                           *p;
@@ -281,17 +281,17 @@ ngx_http_lua_init_config_directive(ngx_conf_t *cf, ngx_command_t *cmd,
         }
     }
 
-    if (mcf->keys == NULL) {
-        mcf->keys = ngx_array_create(cf->pool, 4,
+    if (lmcf->keys == NULL) {
+        lmcf->keys = ngx_array_create(cf->pool, 4,
                                      sizeof(ngx_keyval_t));
-        if (mcf->keys == NULL) {
+        if (lmcf->keys == NULL) {
             return NGX_CONF_ERROR;
         }
     }
 
     /* check for duplicate key: error on conflict */
-    kv = mcf->keys->elts;
-    for (i = 0; i < mcf->keys->nelts; i++) {
+    kv = lmcf->keys->elts;
+    for (i = 0; i < lmcf->keys->nelts; i++) {
         if (value[1].len == kv[i].key.len
             && ngx_strncmp(value[1].data, kv[i].key.data, value[1].len) == 0)
         {
@@ -302,7 +302,7 @@ ngx_http_lua_init_config_directive(ngx_conf_t *cf, ngx_command_t *cmd,
         }
     }
 
-    kv = ngx_array_push(mcf->keys);
+    kv = ngx_array_push(lmcf->keys);
     if (kv == NULL) {
         return NGX_CONF_ERROR;
     }
@@ -364,22 +364,22 @@ ngx_http_lua_init_config_directive(ngx_conf_t *cf, ngx_command_t *cmd,
 static int
 ngx_http_lua_get_init_configs(lua_State *L)
 {
-    ngx_http_lua_config_main_conf_t  *mcf;
+    ngx_http_lua_config_main_conf_t  *lmcf;
     ngx_keyval_t                     *kv;
     ngx_uint_t                        i;
 
-    mcf = ngx_http_cycle_get_module_main_conf(ngx_cycle,
-                                              ngx_http_lua_config_module);
+    lmcf = ngx_http_cycle_get_module_main_conf(ngx_cycle,
+                                               ngx_http_lua_config_module);
 
-    lua_createtable(L, 0, (mcf != NULL && mcf->keys != NULL)
-                           ? (int) mcf->keys->nelts : 0);
+    lua_createtable(L, 0, (lmcf != NULL && lmcf->keys != NULL)
+                           ? (int) lmcf->keys->nelts : 0);
 
-    if (mcf == NULL || mcf->keys == NULL) {
+    if (lmcf == NULL || lmcf->keys == NULL) {
         return 1;
     }
 
-    kv = mcf->keys->elts;
-    for (i = 0; i < mcf->keys->nelts; i++) {
+    kv = lmcf->keys->elts;
+    for (i = 0; i < lmcf->keys->nelts; i++) {
         lua_pushlstring(L, (char *) kv[i].key.data, kv[i].key.len);
         lua_pushlstring(L, (char *) kv[i].value.data, kv[i].value.len);
         lua_rawset(L, -3);
@@ -392,7 +392,7 @@ ngx_http_lua_get_init_configs(lua_State *L)
 static char *
 ngx_http_lua_config_directive(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
-    ngx_http_lua_config_loc_conf_t *lccf = conf;
+    ngx_http_lua_config_loc_conf_t *llcf = conf;
 
     ngx_str_t                      *value;
     u_char                         *p;
@@ -423,16 +423,16 @@ ngx_http_lua_config_directive(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         }
     }
 
-    if (lccf->keys == NULL) { 
-        lccf->keys = ngx_array_create(cf->pool, 4,
+    if (llcf->keys == NULL) { 
+        llcf->keys = ngx_array_create(cf->pool, 4,
                                       sizeof(ngx_http_lua_config_keyval_t));
-        if (lccf->keys == NULL) {
+        if (llcf->keys == NULL) {
             return NGX_CONF_ERROR;
         }
     }
 
-    kv = lccf->keys->elts;
-    for (i = 0; i < lccf->keys->nelts; i++) {
+    kv = llcf->keys->elts;
+    for (i = 0; i < llcf->keys->nelts; i++) {
         if (value[1].len == kv[i].key.len &&
             ngx_strncmp(value[1].data, kv[i].key.data, value[1].len) == 0)
         {
@@ -440,8 +440,8 @@ ngx_http_lua_config_directive(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         }
     }
 
-    if (i == lccf->keys->nelts) {
-        kv = ngx_array_push(lccf->keys);
+    if (i == llcf->keys->nelts) {
+        kv = ngx_array_push(llcf->keys);
         if (kv == NULL) {
             return NGX_CONF_ERROR;
         }
@@ -1268,7 +1268,7 @@ static ngx_int_t
 ngx_http_lua_config_get_value_internal(ngx_http_request_t *r, u_char *name,
     size_t len, ngx_str_t *value)
 {
-    ngx_http_lua_config_loc_conf_t  *lccf;
+    ngx_http_lua_config_loc_conf_t  *llcf;
     ngx_http_lua_config_keyval_t    *kv;
     ngx_http_lua_config_cmd_t       *cmds;
     ngx_str_t                        s;
@@ -1281,15 +1281,15 @@ ngx_http_lua_config_get_value_internal(ngx_http_request_t *r, u_char *name,
     s.len = len;
     s.data = name;
 
-    lccf = ngx_http_get_module_loc_conf(r, ngx_http_lua_config_module);
+    llcf = ngx_http_get_module_loc_conf(r, ngx_http_lua_config_module);
 
-    if (lccf == NULL || lccf->keys == NULL || lccf->hash.buckets == NULL) {
+    if (llcf == NULL || llcf->keys == NULL || llcf->hash.buckets == NULL) {
         return NGX_DECLINED;
     }
 
     key = ngx_hash_key(s.data, s.len);
 
-    kv = ngx_hash_find(&lccf->hash, key, s.data, s.len);
+    kv = ngx_hash_find(&llcf->hash, key, s.data, s.len);
     if (kv == NULL) {
         return NGX_DECLINED;
     }
