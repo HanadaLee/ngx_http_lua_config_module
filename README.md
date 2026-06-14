@@ -156,7 +156,7 @@ Inside the block, two types of entries are supported:
 server host[:port] [level=N] [weight=N] [down];
 ```
 
-*   `host`: An IP address (IPv4 or IPv6 in `[addr]` notation) or domain name. Unix domain sockets (`unix:`) are not supported. Variables are not allowed.
+*   `host`: An IP address (IPv4 or IPv6 in `[addr]` notation), domain name, or Unix domain socket path prefixed with `unix:`. Variables are not allowed.
 *   `port`: Optional port number. Defaults to `0` if omitted.
 *   `level`: Server level, defaults to `0`.
 *   `weight`: Server weight, defaults to `1`.
