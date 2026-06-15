@@ -38,7 +38,6 @@ typedef struct {
     ngx_uint_t                  level;
     ngx_uint_t                  weight;
     ngx_uint_t                  down;
-    ngx_uint_t                  unix_socket;
 } ngx_http_lua_upstream_server_t;
 
 
@@ -1004,7 +1003,6 @@ ngx_http_lua_upstream(ngx_conf_t *cf, ngx_command_t *dummy, void *conf)
         server->weight = 1;
         server->down = 0;
         server->port = 0;
-        server->unix_socket = 0;
 
         ngx_memzero(&u, sizeof(ngx_url_t));
 
@@ -1021,9 +1019,15 @@ ngx_http_lua_upstream(ngx_conf_t *cf, ngx_command_t *dummy, void *conf)
             return NGX_CONF_ERROR;
         }
 
-        server->host = u.host;
+        if (u.family == AF_UNIX) {
+            server->host.data = value[1].data;
+            server->host.len = sizeof("unix:") - 1 + u.host.len;
+
+        } else {
+            server->host = u.host;
+        }
+
         server->port = u.port;
-        server->unix_socket = (u.family == AF_UNIX);
 
         /* parse optional params: level=N, weight=N, down */
         for (i = 2; i < cf->args->nelts; i++) {
@@ -1438,7 +1442,7 @@ ngx_http_lua_config_get_upstream(lua_State *L)
     lua_createtable(L, us->servers->nelts, 0);
 
     for (i = 0; i < us->servers->nelts; i++) {
-        lua_createtable(L, 0, 6);
+        lua_createtable(L, 0, 5);
 
         lua_pushlstring(L, (char *) servers[i].host.data, servers[i].host.len);
         lua_setfield(L, -2, "host");
@@ -1455,12 +1459,9 @@ ngx_http_lua_config_get_upstream(lua_State *L)
         lua_pushboolean(L, servers[i].down);
         lua_setfield(L, -2, "down");
 
-        lua_pushboolean(L, servers[i].unix_socket);
-        lua_setfield(L, -2, "unix_socket");
-
         lua_rawseti(L, -2, i + 1);
 
-        /* crc: |host:port:level:weight:down:unix_socket */
+        /* crc: |host:port:level:weight:down */
         ngx_crc32_update(&crc, (u_char *) "|", 1);
         ngx_crc32_update(&crc, servers[i].host.data, servers[i].host.len);
         ngx_crc32_update(&crc, (u_char *) ":", 1);
@@ -1475,9 +1476,6 @@ ngx_http_lua_config_get_upstream(lua_State *L)
         ngx_crc32_update(&crc, (u_char *) ":", 1);
         ngx_crc32_update(&crc, servers[i].down ? (u_char *) "1"
                                                : (u_char *) "0", 1);
-        ngx_crc32_update(&crc, (u_char *) ":", 1);
-        ngx_crc32_update(&crc, servers[i].unix_socket ? (u_char *) "1"
-                                                      : (u_char *) "0", 1);
     }
 
     lua_setfield(L, -2, "servers");
